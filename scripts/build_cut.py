@@ -60,13 +60,16 @@ def build(footage: pathlib.Path, out: pathlib.Path, music: str | None = None) ->
         seg(P, 0.0, 6.0, "A buyer clicks Pay with PayPal.", crop="520:800:0:0"),
         seg(P, 6.0, 13.0, "Orders v2: create the order, buyer approves.", crop="520:800:0:0"),
         seg(P, 13.0, 21.0, "Complete Purchase. PayPal captures it.", crop="520:800:0:0"),
-        seg(M, 121.0, 127.0, "The sale books itself. PayPal capture id on screen."),
-        seg(M, 129.5, 134.0, "Seller sees PAID, net after fees, buyer email."),
+        seg(M, 120.5, 126.5, "The sale books itself. PayPal capture id on screen."),
+        seg(M, 128.0, 130.5, "Seller sees PAID, net after fees, buyer email."),
     ]
     if S:
         SEGMENTS.append(seg(S, 2.0, 12.0, "Type the tracking number. SHOPKEEPER posts it to PayPal, buyer notified."))
+    else:
+        SEGMENTS.append(seg(M, 130.5, 139.5, "Type the tracking number. Ship it. PayPal notifies the buyer."))
     SEGMENTS += [
-        seg(M, 146.0, 152.0, "Every dollar lands in a ledger keyed by the PayPal capture id."),
+        seg(M, 144.5, 150.5, "Every dollar lands in a ledger keyed by the PayPal capture id."),
+        seg(M, 158.0, 162.0, "SHOPKEEPER wrote the buyer note. BOOKKEEPER reconciles against PayPal."),
         card([("Google ADK + Gemini crew", 56, "white"), ("PayPal Orders v2, JS SDK v6, webhooks", 56, "white"),
               ("57 offline tests. Live on Render.", 56, "white")], 4.0),
         card([("SHELF x PayPal", 110, MINT), ("shelf-paypal.onrender.com", 60, "white"),
