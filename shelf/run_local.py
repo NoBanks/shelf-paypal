@@ -23,9 +23,21 @@ _KEY_IDX = _random.randint(0, 997)  # random pool entry; per-item rotation walks
 
 
 def _pool() -> list[str]:
+    """Key sources, in order: GEMINI_KEYS (comma list), GEMINI_API_KEY + GEMINI_API_KEY_N
+    env vars (the Windows PC has 43 of them), the keystore file, GOOGLE_API_KEY."""
     ks = os.environ.get("GEMINI_KEYS")
     if ks:
         return [k.strip() for k in ks.split(",") if k.strip()]
+    numbered: list[tuple[int, str]] = []
+    for name, val in os.environ.items():
+        if not val or not val.strip():
+            continue
+        if name == "GEMINI_API_KEY":
+            numbered.append((0, val.strip()))
+        elif name.startswith("GEMINI_API_KEY_") and name[15:].isdigit():
+            numbered.append((int(name[15:]), val.strip()))
+    if numbered:
+        return [v for _, v in sorted(numbered)]
     try:
         with open(KEYSTORE) as fh:
             return json.load(fh)["keys"]

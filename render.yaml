@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: shelf-paypal
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && python -m scripts.seed_demo
+    startCommand: uvicorn shelf.webapp:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: PAYPAL_ENVIRONMENT
+        value: SANDBOX
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
+      - key: SHELF_ADMIN_TOKEN
+        sync: false
+      - key: GEMINI_KEYS
+        sync: false

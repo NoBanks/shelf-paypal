@@ -189,3 +189,27 @@ def test_ledger_api_carries_paypal_ids(client, st, pp):
     assert j["totals"]["paid_total"] == 45.0
     assert j["entries"][0]["paypal_capture_id"] == "CAP-ORD1"
     assert j["entries"][0]["kind"] == "paid"
+
+
+def test_capture_without_gemini_still_books_and_desk_endpoint_exists(client, st, pp, monkeypatch):
+    monkeypatch.setenv("SHELF_SHOPKEEPER", "0")
+    _live(st)
+    client.post("/api/paypal/orders", json={"item_id": "it_1"})
+    r = client.post("/api/paypal/orders/ORD1/capture")
+    assert r.status_code == 200
+    d = client.get("/api/items/it_1/desk").json()
+    assert d["item_id"] == "it_1"
+    assert d["note"] == ""
+
+
+def test_bookkeeper_route_without_gemini_reports_skip(client, monkeypatch):
+    monkeypatch.delenv("GEMINI_KEYS", raising=False)
+    import os
+    for k in list(os.environ):
+        if k.startswith("GEMINI_API_KEY") or k == "GOOGLE_API_KEY":
+            monkeypatch.delenv(k, raising=False)
+    from shelf import run_local
+    monkeypatch.setattr(run_local, "KEYSTORE", "/nonexistent/keys.json")
+    r = client.post("/api/bookkeeper")
+    assert r.status_code == 200
+    assert "skipped" in r.json()["report"]

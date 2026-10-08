@@ -33,7 +33,7 @@ from fastapi import FastAPI, HTTPException, Request
 from starlette.datastructures import UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 
-from shelf import checkout, publish, ui
+from shelf import checkout, desk, publish, shop_tools, ui
 from shelf.paypal import PayPalClient, PayPalError, summarize_webhook_capture
 from shelf.store import BaseStore, Item, get_store
 
@@ -84,10 +84,29 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
     app = FastAPI(title="SHELF x PayPal")
     store = store or get_store()
     paypal = paypal if paypal is not None else PayPalClient.from_env()
+    shop_tools.configure(store, paypal)  # agents share the app's store and PayPal client
     events: dict[str, list[dict]] = {}
+    desk_notes: dict[str, str] = {}
 
     def push(item_id: str, agent: str, text: str) -> None:
         events.setdefault(item_id, []).append({"ts": time.time(), "agent": agent, "text": text})
+
+    async def shopkeeper_task(item_id: str, tracking_number: str = "", carrier: str = "") -> None:
+        """Post-sale agent pass. Runs after the capture is already booked; failures are logged only."""
+        item = store.get_item(item_id)
+        if item is None:
+            return
+        push(item_id, "shopkeeper", "on it: confirming with PayPal")
+        try:
+            note = await desk.run_shopkeeper(item, tracking_number, carrier)
+            desk_notes[item_id] = note
+            fresh = store.get_item(item_id)
+            if fresh is not None and note and not note.startswith("shopkeeper skipped"):
+                fresh.notes = note[:600]
+                store.save_item(fresh)
+            push(item_id, "shopkeeper", note[:300] if note else "done")
+        except Exception as exc:  # never let an agent error touch the money path
+            push(item_id, "shopkeeper", f"error: {exc}")
 
     def need_paypal():
         if paypal is None:
@@ -239,6 +258,8 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
             raise HTTPException(409, str(exc))
         except PayPalError as exc:
             raise HTTPException(502, f"PayPal tracking failed: {exc} (debug_id {exc.debug_id})")
+        if desk.shopkeeper_enabled():
+            asyncio.create_task(shopkeeper_task(item.id, item.tracking_number, item.carrier))
         return {"status": item.status, "tracking_number": item.tracking_number, "carrier": item.carrier}
 
     # legacy manual flow kept for items sold off-platform (cash pickup)
@@ -298,6 +319,8 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
         except PayPalError as exc:
             status = 402 if exc.status_code in (402, 422) else 502
             raise HTTPException(status, f"PayPal capture failed: {exc} (debug_id {exc.debug_id})")
+        if desk.shopkeeper_enabled():
+            asyncio.create_task(shopkeeper_task(item.id))
         return {"status": "COMPLETED", "order_id": order_id, "capture_id": item.paypal_capture_id,
                 "amount": item.sold_price, "item": _item_public(item)}
 
@@ -319,8 +342,25 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
             return {"handled": False, "event_type": event.get("event_type", "")}
         summary = summarize_webhook_capture(event.get("resource") or {})
         item = checkout.record_capture(store, summary)
+        if item is not None and desk.shopkeeper_enabled():
+            asyncio.create_task(shopkeeper_task(item.id))
         return {"handled": item is not None, "item_id": item.id if item else None,
                 "capture_id": summary["capture_id"]}
+
+    # ----- desk (agents after the sale) -----
+    @app.get("/api/items/{item_id}/desk")
+    async def desk_note(item_id: str) -> dict:
+        return {"item_id": item_id, "note": desk_notes.get(item_id, ""),
+                "events": events.get(item_id, [])[-20:]}
+
+    @app.post("/api/bookkeeper")
+    async def bookkeeper_report(request: Request) -> dict:
+        _require_admin(request)
+        try:
+            report = await desk.run_bookkeeper()
+        except Exception as exc:
+            raise HTTPException(502, f"bookkeeper failed: {exc}")
+        return {"report": report, "totals": store.totals()}
 
     # ----- ledger -----
     @app.get("/api/ledger")

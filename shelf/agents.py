@@ -1,17 +1,29 @@
-"""The SHELF agent crew, on Google ADK.
+"""The SHELF agent crew, on Google ADK, now with a cashier's desk.
 
-CURATOR    sees each item photo (Gemini vision): what it is, condition, flaws.
-APPRAISER  price-comps with cited sources; abstains rather than invents.
-COPYWRITER writes the honest listing in the seller's voice.
-(SHOPKEEPER and BOOKKEEPER live in storefront/ and ledger/ - M2.)
+CURATOR     sees each item photo (Gemini vision): what it is, condition, flaws.
+APPRAISER   price-comps with cited sources; abstains rather than invents.
+COPYWRITER  writes the honest listing in the seller's voice.
+SHOPKEEPER  (new, PayPal AI Hackathon) closes the sale: confirms the PayPal
+            order, books it, posts shipment tracking, writes the buyer note.
+BOOKKEEPER  (new) reconciles the ledger against PayPal and reports plainly.
 
 Design law inherited from the builder's own selling practice: flaws are DISCLOSED
 as a feature, comps carry receipts, and a human approves before anything goes live.
+Money law: the model never sets an amount. Every PayPal tool below reads the
+amount from the approved item record or from PayPal itself.
 """
+from __future__ import annotations
+
+import os
+
 from google.adk.agents import LlmAgent, SequentialAgent
+
+from shelf import shop_tools
 from shelf.tools import comps_search
 
-GEMINI = "gemini-3.5-flash-lite"  # rules: Gemini 3.5 or newer. LITE because flash free tier = 20 req/DAY (killed the 8/18 feed); lite tier is the volume lane. Do not switch back to bare flash without checking ai.google.dev rate limits.
+# rules: Gemini 3.5 or newer. LITE because flash free tier = 20 req/DAY (killed the
+# 8/18 feed); lite tier is the volume lane. Override with SHELF_GEMINI_MODEL.
+GEMINI = os.environ.get("SHELF_GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 curator = LlmAgent(
     name="curator",
@@ -68,4 +80,38 @@ item_crew = SequentialAgent(
     name="shelf_item_crew",
     description="Runs one item from photos to a draft listing.",
     sub_agents=[curator, appraiser, copywriter],
+)
+
+shopkeeper = LlmAgent(
+    name="shopkeeper",
+    model=GEMINI,
+    description="Closes a PayPal sale: confirms the order, books it, posts tracking, writes the buyer note.",
+    instruction=(
+        "You are the SHOPKEEPER. A buyer just paid for an item through PayPal, or the "
+        "seller just handed you a tracking number. Work only through your tools: "
+        "1) get_paypal_order to confirm the PayPal order status is COMPLETED and read "
+        "the capture id and amount from PayPal (never from memory). "
+        "2) book_sale to record the capture in the ledger (it is idempotent). "
+        "3) If a tracking number was provided, add_tracking so PayPal notifies the buyer. "
+        "4) Finish with a short plain-text buyer note (two sentences, no hype, thank "
+        "them, name the item, say what happens next). "
+        "You never choose or change a price. If PayPal reports anything other than "
+        "COMPLETED, stop and say exactly what PayPal said."
+    ),
+    tools=[shop_tools.get_paypal_order, shop_tools.book_sale, shop_tools.add_tracking],
+)
+
+bookkeeper = LlmAgent(
+    name="bookkeeper",
+    model=GEMINI,
+    description="Reconciles the SHELF ledger against PayPal and reports plainly.",
+    instruction=(
+        "You are the BOOKKEEPER. Use ledger_summary to read the ledger, then "
+        "list_paypal_captures to read what PayPal says was captured. Report in "
+        "plain text: items listed, items paid, gross, net after PayPal fees, "
+        "anything paid on PayPal that is missing from the ledger, anything in the "
+        "ledger PayPal does not know about. Numbers come only from the tools. "
+        "No markdown. Under 120 words."
+    ),
+    tools=[shop_tools.ledger_summary, shop_tools.list_paypal_captures],
 )
