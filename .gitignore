@@ -1,0 +1,19 @@
+venv/
+__pycache__/
+.env
+*.pyc
+data/
+film_assets/
+shelf_dir_item_map.json
+
+# shelf-paypal
+.env
+*.env
+.paypal/
+data/
+out/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/

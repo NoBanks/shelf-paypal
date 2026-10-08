@@ -1,0 +1,8 @@
+venv/
+nim_out/
+out/
+data/
+PRDS/
+__pycache__/
+.git/
+*.log
