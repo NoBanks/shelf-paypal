@@ -343,7 +343,14 @@ async function refresh() {
       return;
     }
     empty.style.display = 'none';
+    // Preserve what the seller is typing: the grid re-renders every 3s and used to wipe
+    // the tracking box mid-entry (found recording the demo 2026-10-08).
+    const active = document.activeElement && document.activeElement.id;
+    const keep = {};
+    grid.querySelectorAll('input[id^="trk-"], select[id^="car-"]').forEach(el => { if (el.value) keep[el.id] = el.value; });
+    if (active && (active.startsWith('trk-') || active.startsWith('car-'))) { return; }  // never re-render under the cursor
     grid.innerHTML = items.map(renderCard).join('');
+    for (const id in keep) { const el = document.getElementById(id); if (el) el.value = keep[id]; }
     for (const it of items) {
       if (it.status === 'processing') subscribeFeed(it.id);
     }

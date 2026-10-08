@@ -91,11 +91,18 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
     def push(item_id: str, agent: str, text: str) -> None:
         events.setdefault(item_id, []).append({"ts": time.time(), "agent": agent, "text": text})
 
+    desk_runs: set[str] = set()
+
     async def shopkeeper_task(item_id: str, tracking_number: str = "", carrier: str = "") -> None:
-        """Post-sale agent pass. Runs after the capture is already booked; failures are logged only."""
+        """Post-sale agent pass. Runs after the capture is already booked; failures are logged only.
+        Deduped per (item, stage): the capture route and the webhook both fire for one sale."""
         item = store.get_item(item_id)
         if item is None:
             return
+        key = f"{item_id}:{'ship' if tracking_number else 'paid'}:{item.paypal_capture_id}"
+        if key in desk_runs:
+            return
+        desk_runs.add(key)
         push(item_id, "shopkeeper", "on it: confirming with PayPal")
         try:
             note = await desk.run_shopkeeper(item, tracking_number, carrier)
