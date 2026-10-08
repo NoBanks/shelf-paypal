@@ -213,3 +213,12 @@ def test_bookkeeper_route_without_gemini_reports_skip(client, monkeypatch):
     r = client.post("/api/bookkeeper")
     assert r.status_code == 200
     assert "skipped" in r.json()["report"]
+
+
+def test_items_api_serves_photo_urls_with_windows_paths(client, st):
+    it = _live(st)
+    it.photo_paths = [r"data\uploads\it_1\photo_0.png", "data/uploads/it_1/photo_1.jpg"]
+    st.save_item(it)
+    j = client.get("/api/items").json()[0]
+    assert j["photos"] == ["/uploads/it_1/photo_0.png", "/uploads/it_1/photo_1.jpg"]
+    assert j["thumb"] == "/uploads/it_1/photo_0.png"

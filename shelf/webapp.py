@@ -208,7 +208,9 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
             {
                 "id": it.id, "status": it.status, "title": it.title or "(processing)",
                 "price": it.price, "description": it.description, "thumb": _thumb(it),
-                "photo_paths": it.photo_paths, "notes": it.notes,
+                "photo_paths": it.photo_paths,
+                "photos": [f"/uploads/{it.id}/{pathlib.Path(p).name}" for p in it.photo_paths],
+                "notes": it.notes,
                 "paypal_order_id": it.paypal_order_id, "paypal_capture_id": it.paypal_capture_id,
                 "buyer_email": it.buyer_email, "sold_price": it.sold_price, "net_amount": it.net_amount,
                 "tracking_number": it.tracking_number, "carrier": it.carrier,

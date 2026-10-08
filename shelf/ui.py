@@ -289,11 +289,12 @@ function escapeHtml(s) {
 }
 
 function renderCard(item) {
-  const photos = (item.photo_paths || []).slice(0, 3).map((p, i) => {
-    const parts = p.split('/');
-    const fn = parts[parts.length - 1];
-    return '<img src="/uploads/' + item.id + '/' + fn + '" alt="">';
-  }).join('');
+  // server sends ready URLs in item.photos (paths on disk may use backslashes on Windows)
+  const urls = (item.photos && item.photos.length) ? item.photos : (item.photo_paths || []).map(p => {
+    const parts = p.split(/[\/]/);
+    return '/uploads/' + item.id + '/' + parts[parts.length - 1];
+  });
+  const photos = urls.slice(0, 3).map(u => '<img src="' + u + '" alt="">').join('');
   const status = item.status || 'processing';
   let actions = '';
   let feed = '';
