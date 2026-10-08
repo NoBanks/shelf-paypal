@@ -178,3 +178,26 @@ def test_from_env_returns_none_without_credentials(monkeypatch):
     monkeypatch.delenv("PAYPAL_CLIENT_ID", raising=False)
     monkeypatch.delenv("PAYPAL_CLIENT_SECRET", raising=False)
     assert PayPalClient.from_env() is None
+
+
+@respx.mock
+async def test_verify_webhook_posts_headers_and_event(client):
+    _token_route(respx)
+    route = respx.post(f"{BASE}/v1/notifications/verify-webhook-signature").mock(
+        return_value=httpx.Response(200, json={"verification_status": "SUCCESS"}))
+    headers = {"paypal-auth-algo": "SHA256withRSA", "paypal-cert-url": "https://api.sandbox.paypal.com/cert",
+               "paypal-transmission-id": "t1", "paypal-transmission-sig": "sig", "paypal-transmission-time": "now"}
+    ok = await client.verify_webhook(headers, {"id": "WH-1"}, webhook_id="WHID")
+    assert ok is True
+    body = json.loads(route.calls[0].request.content)
+    assert body == {"auth_algo": "SHA256withRSA", "cert_url": "https://api.sandbox.paypal.com/cert",
+                    "transmission_id": "t1", "transmission_sig": "sig", "transmission_time": "now",
+                    "webhook_id": "WHID", "webhook_event": {"id": "WH-1"}}
+
+
+@respx.mock
+async def test_verify_webhook_failure_is_false(client):
+    _token_route(respx)
+    respx.post(f"{BASE}/v1/notifications/verify-webhook-signature").mock(
+        return_value=httpx.Response(200, json={"verification_status": "FAILURE"}))
+    assert await client.verify_webhook({}, {}, webhook_id="WHID") is False

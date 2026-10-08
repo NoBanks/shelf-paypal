@@ -169,6 +169,26 @@ class PayPalClient:
         return {"order_id": order_id, "tracker_id": tracker_id, "raw": raw}
 
 
+    # ----- webhooks -----
+    async def verify_webhook(self, headers: dict, event: dict, *, webhook_id: str) -> bool:
+        """POST /v1/notifications/verify-webhook-signature. True only on SUCCESS."""
+        h = {k.lower(): v for k, v in headers.items()}
+        payload = {
+            "auth_algo": h.get("paypal-auth-algo", ""),
+            "cert_url": h.get("paypal-cert-url", ""),
+            "transmission_id": h.get("paypal-transmission-id", ""),
+            "transmission_sig": h.get("paypal-transmission-sig", ""),
+            "transmission_time": h.get("paypal-transmission-time", ""),
+            "webhook_id": webhook_id,
+            "webhook_event": event,
+        }
+        try:
+            res = await self._request("POST", "/v1/notifications/verify-webhook-signature", json=payload)
+        except PayPalError:
+            return False
+        return isinstance(res, dict) and res.get("verification_status") == "SUCCESS"
+
+
 def summarize_capture(raw: dict) -> dict:
     """Flatten a capture (or webhook resource) response to what the ledger needs."""
     units = raw.get("purchase_units") or [{}]
@@ -190,6 +210,24 @@ def summarize_capture(raw: dict) -> dict:
         "payer_email": payer.get("email_address", ""),
         "payer_id": payer.get("payer_id", ""),
         "raw": raw,
+    }
+
+
+def summarize_webhook_capture(resource: dict) -> dict:
+    """Flatten a PAYMENT.CAPTURE.COMPLETED webhook resource to the ledger shape."""
+    related = ((resource.get("supplementary_data") or {}).get("related_ids")) or {}
+    return {
+        "order_id": related.get("order_id", ""),
+        "status": resource.get("status", ""),
+        "capture_id": resource.get("id", ""),
+        "capture_status": resource.get("status", ""),
+        "amount": (resource.get("amount") or {}).get("value", ""),
+        "net_amount": ((resource.get("seller_receivable_breakdown") or {}).get("net_amount") or {}).get("value", ""),
+        "currency": (resource.get("amount") or {}).get("currency_code", ""),
+        "custom_id": resource.get("custom_id", ""),
+        "payer_email": "",
+        "payer_id": "",
+        "raw": resource,
     }
 
 

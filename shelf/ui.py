@@ -758,3 +758,6 @@ setInterval(refresh, 5000);
 </script>
 </body>
 </html>"""
+
+
+ITEM_HTML = """<!DOCTYPE html><html><body><paypal-button id="paypal-button"></paypal-button></body></html>"""
