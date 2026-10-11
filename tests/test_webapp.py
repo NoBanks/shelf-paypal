@@ -222,3 +222,24 @@ def test_items_api_serves_photo_urls_with_windows_paths(client, st):
     j = client.get("/api/items").json()[0]
     assert j["photos"] == ["/uploads/it_1/photo_0.png", "/uploads/it_1/photo_1.jpg"]
     assert j["thumb"] == "/uploads/it_1/photo_0.png"
+
+
+def test_upload_keeps_every_photo(st, pp, monkeypatch, tmp_path):
+    """Regression: three files under the same field name must all be saved (was: only the last)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SHELF_ADMIN_TOKEN", raising=False)
+    import shelf.webapp as wa
+
+    async def no_crew(*a, **k):
+        return None
+    app = create_app(store=st, paypal=pp)
+    c = TestClient(app)
+    import asyncio
+    monkeypatch.setattr(asyncio, "create_task", lambda coro: coro.close())
+    files = [("photos", (f"p{i}.jpg", b"\xff\xd8\xff" + bytes([i]) * 10, "image/jpeg")) for i in range(3)]
+    r = c.post("/api/items", files=files)
+    assert r.status_code == 200, r.text
+    iid = r.json()["item_id"]
+    item = st.get_item(iid)
+    assert len(item.photo_paths) == 3
+    assert [p.replace("\\", "/").split("/")[-1] for p in item.photo_paths] == ["photo_0.jpg", "photo_1.jpg", "photo_2.jpg"]

@@ -185,7 +185,10 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
     async def create_item(request: Request) -> dict:
         _require_admin(request)
         form = await request.form()
-        files = [v for v in form.values() if isinstance(v, UploadFile)]
+        # multi_items(), not values(): a MultiDict keeps only the LAST value per key, so a
+        # 3-photo upload (all named "photos") silently became 1 photo. Found 2026-10-11
+        # running real Marketplace listings through the live site.
+        files = [v for _, v in form.multi_items() if isinstance(v, UploadFile)]
         if not files or len(files) > 6:
             raise HTTPException(400, "upload 1 to 6 photos")
         item_id = "it_" + secrets.token_hex(5)
