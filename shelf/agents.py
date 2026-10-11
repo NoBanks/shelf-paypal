@@ -57,7 +57,8 @@ appraiser = LlmAgent(
         "used_range_low, used_range_high, suggested_list, suggested_floor, "
         "comps (list of {source_url, price, note}). RULES: every number must trace "
         "to a comp in your list. If search results are insufficient, return "
-        "needs_human_pricing=true instead of inventing numbers. Use your "
+        "needs_human_pricing=true instead of inventing numbers. If SELLER NOTES state a "
+        "size, search comps for that size. Use your "
         "comps_search tool to find current comparable prices before answering."
     ),
     tools=[comps_search],
@@ -72,7 +73,11 @@ copywriter = LlmAgent(
         "the listing: title (under 80 chars, no hype words), "
         "description (plain text, warm but honest, discloses every flaw the "
         "curator found, states dimensions/attributes, ends with pickup/shipping "
-        "line), tags (10 search keywords). Plain text only - no markdown symbols."
+        "line), tags (10 search keywords). Plain text only - no markdown symbols. "
+        "If SELLER NOTES are present, they are facts: use the seller's size, series name, "
+        "piece name and edition exactly as given (this is the seller's own work, so their "
+        "title is allowed). NEVER state a size or dimension that is not in the seller notes; "
+        "a photo cannot prove a measurement. Never put a price in the description."
     ),
 )
 

@@ -147,3 +147,12 @@ def test_transitions(tmp_path) -> None:
     assert paid.status == "paid"
     kinds = [e.kind for e in s.list_ledger()]
     assert "listed" in kinds and "sold" in kinds and "paid" in kinds
+
+
+def test_trailing_tag_line_moves_into_tags() -> None:
+    text = ("Lone Journey Framed Art Print #37D068\n\nA 1 of 1 print in a white frame. Ships from Apple Valley.\n\n"
+            "Lone Journey, art print, astronaut art, framed art, 5x5 art, original artwork")
+    title, desc, tags = publish._parse_copywriter(text)
+    assert title == "Lone Journey Framed Art Print #37D068"
+    assert desc.endswith("Ships from Apple Valley.")
+    assert tags[0] == "Lone Journey" and len(tags) == 6

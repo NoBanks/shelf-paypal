@@ -31,6 +31,9 @@ class Item:
     floor: float = 0.0
     sold_price: float = 0.0
     notes: str = ""
+    # What the seller told the crew at upload (size, series, their price). Facts, not guesses.
+    seller_notes: str = ""
+    seller_price: float = 0.0
     # PayPal (added for the PayPal AI Hackathon build, Oct 2026)
     paypal_order_id: str = ""
     paypal_capture_id: str = ""

@@ -198,6 +198,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     border-radius: 999px; font-weight: 600; font-size: 14px; text-decoration: none;
   }
   .linkbtn:hover { background: #95e0b8; }
+  .noteinput, .priceinput {
+    background: #0c120e; color: #e9efe9; border: 1px solid #2c4536; border-radius: 999px;
+    padding: 9px 14px; font-size: 13px;
+  }
+  .noteinput { flex: 1; min-width: 220px; }
+  .priceinput { width: 130px; }
   code { color: #7fd4a8; font-size: 12px; }
 </style>
 </head>
@@ -217,6 +223,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <h2>New item</h2>
   <form id="upform" class="upload-row">
     <input type="file" id="photos" name="photos" accept="image/*" multiple required>
+    <input type="text" id="notes" name="notes" placeholder="notes for the crew: size, series, edition (optional)" class="noteinput">
+    <input type="number" id="sprice" name="price" min="1" step="1" placeholder="your price $" class="priceinput">
     <button type="submit" id="upbtn">Upload &amp; process</button>
   </form>
   <div id="upreview" style="display:flex;gap:6px;margin-top:10px;"></div>
@@ -250,6 +258,8 @@ form.addEventListener('submit', async (e) => {
   if (!files.length) return;
   const fd = new FormData();
   for (const f of files) fd.append('photos', f);
+  fd.append('notes', document.getElementById('notes').value || '');
+  fd.append('price', document.getElementById('sprice').value || '');
   upbtn.disabled = true;
   upbtn.textContent = 'Uploading...';
   try {
@@ -311,13 +321,16 @@ function renderCard(item) {
       : '<div class="hint">APPRAISER: suggested ' + fmtPrice(ap.suggested_list || item.price) +
         (ap.suggested_floor ? ', floor ' + fmtPrice(ap.suggested_floor) : '') + (comps ? '<br>comps: ' + comps : '') + '</div>';
     actions = why +
+      (item.seller_price ? '<div class="hint">your price: ' + fmtPrice(item.seller_price) + '</div>' : '') +
       '<div class="shiprow"><input id="price-' + item.id + '" type="number" min="1" step="1" placeholder="price $"' +
-      (item.price ? ' value="' + Number(item.price).toFixed(0) + '"' : '') + '>' +
+      ((item.seller_price || item.price) ? ' value="' + Number(item.seller_price || item.price).toFixed(0) + '"' : '') + '>' +
       '<button onclick="approve(\\'' + item.id + '\\')">Approve</button></div>' +
       (item.notes ? '<div class="note">' + escapeHtml(item.notes) + '</div>' : '');
   } else if (status === 'live') {
     actions = '<a class="linkbtn" href="/store/' + item.id + '" target="_blank">View on store</a>' +
-      '<span class="hint">PayPal checkout is live. Sale books itself.</span>';
+      '<span class="hint">PayPal checkout is live. Sale books itself.</span>' +
+      '<div class="shiprow"><input id="price-' + item.id + '" type="number" min="1" step="1" value="' + Number(item.price).toFixed(0) + '">' +
+      '<button onclick="reprice(\\'' + item.id + '\\')">Update price</button></div>';
   } else if (status === 'paid') {
     actions = '<div class="paid">PAID ' + fmtPrice(item.sold_price) +
       (item.net_amount ? ' <span class="hint">(net ' + fmtPrice(item.net_amount) + ')</span>' : '') +
@@ -415,6 +428,13 @@ async function approve(id) {
   const price = box && box.value ? parseFloat(box.value) : null;
   if (!price) { alert('Set a price first.'); return; }
   await adminPost('/api/items/' + id + '/approve', { price: price });
+  refresh();
+}
+
+async function reprice(id) {
+  const v = parseFloat(document.getElementById('price-' + id).value);
+  if (!v) { alert('Enter a price.'); return; }
+  await adminPost('/api/items/' + id + '/price', { price: v });
   refresh();
 }
 

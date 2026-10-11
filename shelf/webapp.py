@@ -134,7 +134,8 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
             raise HTTPException(503, "PayPal is not configured (set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET)")
         return paypal
 
-    async def crew_task(item_id: str, photos: list[pathlib.Path]) -> None:
+    async def crew_task(item_id: str, photos: list[pathlib.Path], seller_notes: str = "",
+                        seller_price: float = 0.0) -> None:
         push(item_id, "crew", "started")
         try:
             from shelf.run_local import rotate_key, run_item
@@ -145,7 +146,7 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
             last_exc: Exception | None = None
             for attempt in range(10):
                 try:
-                    out = await run_item(photos, UPLOADS / item_id)
+                    out = await run_item(photos, UPLOADS / item_id, seller_notes)
                     break
                 except Exception as exc:
                     if any(m in str(exc).lower() for m in QUOTA_MARKERS):
@@ -160,7 +161,8 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
             for agent in ("curator", "appraiser", "copywriter"):
                 if agent in out:
                     push(item_id, agent, out[agent][:200])
-            item = publish.build_item_from_crew(item_id, [str(p) for p in photos], out)
+            item = publish.build_item_from_crew(item_id, [str(p) for p in photos], out,
+                                                seller_notes=seller_notes, seller_price=seller_price)
             store.save_item(item)
             push(item_id, "crew", "draft ready")
         except Exception as exc:  # surface, never hide
@@ -220,10 +222,16 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
                     gcs.Client().bucket(GCS_BUCKET).blob(f"{item_id}/{dest.name}").upload_from_filename(str(dest))
                 except Exception:
                     pass
+        seller_notes = str(form.get("notes") or "")[:500]
+        try:
+            seller_price = max(0.0, float(form.get("price") or 0))
+        except ValueError:
+            seller_price = 0.0
         item = Item(id=item_id, created=time.time(), photo_paths=[str(p) for p in photos],
-                    status="processing", curator={}, appraiser={}, copywriter={})
+                    status="processing", curator={}, appraiser={}, copywriter={},
+                    seller_notes=seller_notes, seller_price=seller_price)
         store.save_item(item)
-        asyncio.create_task(crew_task(item_id, photos))
+        asyncio.create_task(crew_task(item_id, photos, seller_notes, seller_price))
         return {"item_id": item_id}
 
     @app.get("/api/items")
@@ -236,6 +244,7 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
                 "photos": [f"/uploads/{it.id}/{pathlib.Path(p).name}" for p in it.photo_paths],
                 "notes": it.notes,
                 "appraisal": _appraisal(it),
+                "seller_notes": it.seller_notes, "seller_price": it.seller_price,
                 "paypal_order_id": it.paypal_order_id, "paypal_capture_id": it.paypal_capture_id,
                 "buyer_email": it.buyer_email, "sold_price": it.sold_price, "net_amount": it.net_amount,
                 "tracking_number": it.tracking_number, "carrier": it.carrier,
@@ -295,6 +304,27 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
         if desk.shopkeeper_enabled():
             asyncio.create_task(shopkeeper_task(item.id, item.tracking_number, item.carrier))
         return {"status": item.status, "tracking_number": item.tracking_number, "carrier": item.carrier}
+
+    @app.post("/api/items/{item_id}/price")
+    async def reprice(item_id: str, request: Request) -> dict:
+        """Seller changes the price of a draft or live item (never once paid)."""
+        _require_admin(request)
+        body = await request.json()
+        it = store.get_item(item_id)
+        if it is None:
+            raise HTTPException(404)
+        if it.status not in ("draft", "live"):
+            raise HTTPException(409, f"cannot reprice an item that is {it.status}")
+        try:
+            price = round(float(body.get("price")), 2)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "price required")
+        if price <= 0:
+            raise HTTPException(400, "price must be greater than 0")
+        it.price = price
+        it.paypal_order_id = ""  # any open checkout was for the old amount
+        store.save_item(it)
+        return {"status": it.status, "price": it.price}
 
     # legacy manual flow kept for items sold off-platform (cash pickup)
     @app.post("/api/items/{item_id}/sold")

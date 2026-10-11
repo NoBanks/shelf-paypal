@@ -285,3 +285,36 @@ def test_debug_comps_is_admin_only(st, pp, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     c = TestClient(create_app(store=st, paypal=pp))
     assert c.get("/api/debug/comps").status_code == 401
+
+
+def test_upload_carries_seller_notes_and_price(st, pp, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SHELF_ADMIN_TOKEN", raising=False)
+    import asyncio
+    monkeypatch.setattr(asyncio, "create_task", lambda coro: coro.close())
+    c = TestClient(create_app(store=st, paypal=pp))
+    files = [("photos", ("a.jpg", b"\xff\xd8\xff1", "image/jpeg"))]
+    r = c.post("/api/items", files=files, data={"notes": "5x5 framed, Lone Journey #44ED2E, 1 of 1", "price": "35"})
+    item = st.get_item(r.json()["item_id"])
+    assert item.seller_notes == "5x5 framed, Lone Journey #44ED2E, 1 of 1"
+    assert item.seller_price == 35.0
+    j = c.get("/api/items").json()[0]
+    assert j["seller_price"] == 35.0 and "Lone Journey" in j["seller_notes"]
+
+
+def test_reprice_live_item_and_not_after_paid(client, st, pp):
+    _live(st, price=22.0)
+    r = client.post("/api/items/it_1/price", json={"price": 35})
+    assert r.status_code == 200 and st.get_item("it_1").price == 35.0
+    assert client.post("/api/items/it_1/price", json={"price": 0}).status_code == 400
+    client.post("/api/paypal/orders", json={"item_id": "it_1"})
+    assert pp.orders["ORD1"]["amount"] == "35.00"
+    client.post("/api/paypal/orders/ORD1/capture")
+    assert client.post("/api/items/it_1/price", json={"price": 10}).status_code == 409
+
+
+def test_crew_prompt_includes_seller_notes(monkeypatch):
+    from shelf import run_local
+    import inspect
+    src = inspect.getsource(run_local.run_item)
+    assert "SELLER NOTES" in src

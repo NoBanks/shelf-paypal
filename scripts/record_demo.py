@@ -14,7 +14,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 B = (sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SHELF_URL", "http://127.0.0.1:8899")).rstrip("/")
-ITEM = os.environ.get("SHELF_DEMO_ITEM", "it_demo_lamp")
+ITEM = os.environ.get("SHELF_DEMO_ITEM", "it_lj_f4620b")
 HOME = pathlib.Path.home()
 BUYER = {k: v.strip().strip("'") for k, v in (l.split("=", 1) for l in (HOME / ".paypal" / "sandbox.env").read_text().splitlines() if "=" in l)}
 ADMIN = (HOME / ".paypal" / "shelf-admin-token.txt").read_text().strip()

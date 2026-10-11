@@ -72,6 +72,15 @@ def _parse_copywriter(text: str) -> tuple[str, str, list[str]]:
         else:
             description = stripped
 
+    # TRAILING TAG LINE (2026-10-11): the model sometimes ends the body with a bare
+    # comma-separated keyword line instead of "Tags: ...". Move it into tags.
+    if description and not tags:
+        body, _, last = description.rstrip().rpartition("\n")
+        parts = [t.strip() for t in last.split(",")]
+        if body.strip() and len(parts) >= 5 and all(0 < len(t) <= 30 for t in parts) and "." not in last:
+            description = body.rstrip()
+            tags = parts
+
     return title, description, tags
 
 
@@ -79,6 +88,8 @@ def build_item_from_crew(
     item_id: str,
     photo_paths: list[str],
     crew: dict,
+    seller_notes: str = "",
+    seller_price: float = 0.0,
 ) -> Item:
     """Build an Item from crew agent outputs.
 
@@ -156,6 +167,8 @@ def build_item_from_crew(
         floor=floor,
         sold_price=0.0,
         notes="",
+        seller_notes=seller_notes,
+        seller_price=float(seller_price or 0.0),
     )
 
 

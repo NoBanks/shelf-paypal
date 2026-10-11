@@ -65,7 +65,7 @@ def rotate_key() -> int:
     return _KEY_IDX
 
 
-async def run_item(photos: list[pathlib.Path], out_dir: pathlib.Path) -> dict:
+async def run_item(photos: list[pathlib.Path], out_dir: pathlib.Path, seller_notes: str = "") -> dict:
     from google.adk.runners import InMemoryRunner
     from google.genai import types
 
@@ -76,8 +76,11 @@ async def run_item(photos: list[pathlib.Path], out_dir: pathlib.Path) -> dict:
         app_name="shelf", user_id="seller"
     )
 
-    parts = [types.Part.from_text(text=(
-        "Photos of ONE item to sell follow. Run the full pipeline."))]
+    prompt = "Photos of ONE item to sell follow. Run the full pipeline."
+    if seller_notes.strip():
+        prompt += ("\n\nSELLER NOTES (facts from the seller who owns the item; use them as given, "
+                   "they override anything you would guess from the photos): " + seller_notes.strip())
+    parts = [types.Part.from_text(text=prompt)]
     for p in photos:
         mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
         parts.append(types.Part.from_bytes(data=p.read_bytes(), mime_type=mime))

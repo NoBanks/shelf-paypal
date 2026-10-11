@@ -58,7 +58,7 @@ cd shelf-paypal
 python -m venv .venv && . .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 cp .env.example .env                                 # fill in PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, GOOGLE_API_KEY
-python -m scripts.seed_demo                          # three live demo items so the store is not empty
+python -m scripts.seed_demo                          # the four real Lone Journey prints (see demo_inventory/)
 uvicorn shelf.webapp:app --port 8080 --env-file .env
 ```
 
