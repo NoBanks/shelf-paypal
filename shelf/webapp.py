@@ -146,7 +146,11 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
             last_exc: Exception | None = None
             for attempt in range(10):
                 try:
-                    out = await run_item(photos, UPLOADS / item_id, seller_notes)
+                    # Own thread + own event loop: ADK runs sync tools (the comps web search)
+                    # inline, which blocked this server's loop long enough for Render's 5s
+                    # health check to fail and restart the instance mid-crew (2026-10-11).
+                    out = await asyncio.to_thread(
+                        lambda: asyncio.run(run_item(photos, UPLOADS / item_id, seller_notes)))
                     break
                 except Exception as exc:
                     if any(m in str(exc).lower() for m in QUOTA_MARKERS):

@@ -318,3 +318,11 @@ def test_crew_prompt_includes_seller_notes(monkeypatch):
     import inspect
     src = inspect.getsource(run_local.run_item)
     assert "SELLER NOTES" in src
+
+
+def test_crew_runs_off_the_event_loop():
+    """Regression: the crew must not block the server loop (Render health checks restarted us)."""
+    import inspect
+    from shelf import webapp
+    src = inspect.getsource(webapp.create_app)
+    assert "asyncio.to_thread" in src and "asyncio.run(run_item(" in src
