@@ -159,7 +159,7 @@ def build_item_from_crew(
     )
 
 
-def approve(store: "BaseStore", item_id: str) -> Item:
+def approve(store: "BaseStore", item_id: str, price: float | None = None) -> Item:
     """Transition an item from draft to live and record a ledger entry.
 
     Args:
@@ -181,6 +181,14 @@ def approve(store: "BaseStore", item_id: str) -> Item:
         raise KeyError(f"item not found: {item_id}")
     if item.status != "draft":
         raise ValueError(f"cannot approve item in status {item.status!r}")
+    # Human sets the price when the appraiser abstained (no comps) or overrides it.
+    # An item never goes live at $0: PayPal checkout would refuse it anyway.
+    if price is not None:
+        if float(price) <= 0:
+            raise ValueError("price must be greater than 0")
+        item.price = round(float(price), 2)
+    if not item.price or item.price <= 0:
+        raise ValueError("needs a price: the appraiser abstained, set one to approve")
 
     item.status = "live"
     store.save_item(item)

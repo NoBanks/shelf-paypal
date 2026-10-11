@@ -243,3 +243,45 @@ def test_upload_keeps_every_photo(st, pp, monkeypatch, tmp_path):
     item = st.get_item(iid)
     assert len(item.photo_paths) == 3
     assert [p.replace("\\", "/").split("/")[-1] for p in item.photo_paths] == ["photo_0.jpg", "photo_1.jpg", "photo_2.jpg"]
+
+
+def test_approve_requires_price_when_appraiser_abstained(client, st):
+    it = _live(st, price=0.0)
+    it.status = "draft"
+    st.save_item(it)
+    r = client.post("/api/items/it_1/approve")
+    assert r.status_code == 409
+    assert "needs a price" in r.json()["detail"]
+    r = client.post("/api/items/it_1/approve", json={"price": 0})
+    assert r.status_code == 409
+    r = client.post("/api/items/it_1/approve", json={"price": 39})
+    assert r.status_code == 200
+    item = st.get_item("it_1")
+    assert item.status == "live" and item.price == 39.0
+
+
+def test_approve_seller_can_override_suggested_price(client, st):
+    it = _live(st, price=22.0)
+    it.status = "draft"
+    st.save_item(it)
+    assert client.post("/api/items/it_1/approve", json={"price": 30}).status_code == 200
+    assert st.get_item("it_1").price == 30.0
+
+
+def test_items_api_exposes_appraisal(client, st):
+    it = _live(st, price=22.0)
+    it.status = "draft"
+    it.appraiser = {"suggested_list": 22, "suggested_floor": 12,
+                    "comps": [{"source_url": "https://www.etsy.com/x", "price": 25, "note": "6x6 framed"}]}
+    st.save_item(it)
+    a = client.get("/api/items").json()[0]["appraisal"]
+    assert a["abstained"] is False
+    assert a["suggested_list"] == 22
+    assert a["comps"][0]["source_url"] == "https://www.etsy.com/x"
+
+
+def test_debug_comps_is_admin_only(st, pp, monkeypatch, tmp_path):
+    monkeypatch.setenv("SHELF_ADMIN_TOKEN", "tok")
+    monkeypatch.chdir(tmp_path)
+    c = TestClient(create_app(store=st, paypal=pp))
+    assert c.get("/api/debug/comps").status_code == 401

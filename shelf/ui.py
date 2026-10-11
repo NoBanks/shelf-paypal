@@ -301,7 +301,19 @@ function renderCard(item) {
   if (status === 'processing') {
     feed = '<div class="feed" id="feed-' + item.id + '"><div class="ev"><span class="ag">crew</span> waiting...</div></div>';
   } else if (status === 'draft') {
-    actions = '<button onclick="approve(\\'' + item.id + '\\')">Approve</button>' +
+    const ap = item.appraisal || {};
+    const comps = (ap.comps || []).map(c => {
+      let host = ''; try { host = new URL(c.source_url).hostname.replace('www.', ''); } catch (e) { host = c.source_url || ''; }
+      return escapeHtml(host) + (c.price ? ' $' + Number(c.price).toFixed(0) : '');
+    }).join(', ');
+    const why = ap.abstained
+      ? '<div class="note">APPRAISER abstained: no comparable prices found. You set the price.</div>'
+      : '<div class="hint">APPRAISER: suggested ' + fmtPrice(ap.suggested_list || item.price) +
+        (ap.suggested_floor ? ', floor ' + fmtPrice(ap.suggested_floor) : '') + (comps ? '<br>comps: ' + comps : '') + '</div>';
+    actions = why +
+      '<div class="shiprow"><input id="price-' + item.id + '" type="number" min="1" step="1" placeholder="price $"' +
+      (item.price ? ' value="' + Number(item.price).toFixed(0) + '"' : '') + '>' +
+      '<button onclick="approve(\\'' + item.id + '\\')">Approve</button></div>' +
       (item.notes ? '<div class="note">' + escapeHtml(item.notes) + '</div>' : '');
   } else if (status === 'live') {
     actions = '<a class="linkbtn" href="/store/' + item.id + '" target="_blank">View on store</a>' +
@@ -347,8 +359,8 @@ async function refresh() {
     // the tracking box mid-entry (found recording the demo 2026-10-08).
     const active = document.activeElement && document.activeElement.id;
     const keep = {};
-    grid.querySelectorAll('input[id^="trk-"], select[id^="car-"]').forEach(el => { if (el.value) keep[el.id] = el.value; });
-    if (active && (active.startsWith('trk-') || active.startsWith('car-'))) { return; }  // never re-render under the cursor
+    grid.querySelectorAll('input[id^="trk-"], select[id^="car-"], input[id^="price-"]').forEach(el => { if (el.value) keep[el.id] = el.value; });
+    if (active && (active.startsWith('trk-') || active.startsWith('car-') || active.startsWith('price-'))) { return; }  // never re-render under the cursor
     grid.innerHTML = items.map(renderCard).join('');
     for (const id in keep) { const el = document.getElementById(id); if (el) el.value = keep[id]; }
     for (const it of items) {
@@ -399,7 +411,10 @@ async function adminPost(url, body) {
 }
 
 async function approve(id) {
-  await adminPost('/api/items/' + id + '/approve');
+  const box = document.getElementById('price-' + id);
+  const price = box && box.value ? parseFloat(box.value) : null;
+  if (!price) { alert('Set a price first.'); return; }
+  await adminPost('/api/items/' + id + '/approve', { price: price });
   refresh();
 }
 

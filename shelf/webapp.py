@@ -73,6 +73,20 @@ def _item_public(it: Item) -> dict:
     }
 
 
+def _appraisal(item: Item) -> dict:
+    """What the appraiser concluded, for the seller: suggested numbers, cited comps, or an abstention."""
+    a = item.appraiser if isinstance(item.appraiser, dict) else {}
+    comps = [c for c in (a.get("comps") or []) if isinstance(c, dict)]
+    abstained = bool(a.get("needs_human_pricing")) or not item.price
+    return {
+        "abstained": abstained,
+        "suggested_list": a.get("suggested_list"),
+        "suggested_floor": a.get("suggested_floor"),
+        "comps": [{"source_url": c.get("source_url", ""), "price": c.get("price"), "note": c.get("note", "")}
+                  for c in comps[:5]],
+    }
+
+
 def _thumb(item: Item) -> str:
     if not item.photo_paths:
         return ""
@@ -221,6 +235,7 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
                 "photo_paths": it.photo_paths,
                 "photos": [f"/uploads/{it.id}/{pathlib.Path(p).name}" for p in it.photo_paths],
                 "notes": it.notes,
+                "appraisal": _appraisal(it),
                 "paypal_order_id": it.paypal_order_id, "paypal_capture_id": it.paypal_capture_id,
                 "buyer_email": it.buyer_email, "sold_price": it.sold_price, "net_amount": it.net_amount,
                 "tracking_number": it.tracking_number, "carrier": it.carrier,
@@ -248,8 +263,15 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
     @app.post("/api/items/{item_id}/approve")
     async def approve(item_id: str, request: Request) -> dict:
         _require_admin(request)
+        price = None
         try:
-            item = publish.approve(store, item_id)
+            body = await request.json()
+            if isinstance(body, dict) and body.get("price") not in (None, ""):
+                price = float(body["price"])
+        except Exception:
+            pass
+        try:
+            item = publish.approve(store, item_id, price)
         except KeyError:
             raise HTTPException(404)
         except ValueError as exc:
@@ -358,6 +380,21 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
             asyncio.create_task(shopkeeper_task(item.id))
         return {"handled": item is not None, "item_id": item.id if item else None,
                 "capture_id": summary["capture_id"]}
+
+    # ----- seller diagnostics -----
+    @app.get("/api/debug/comps")
+    async def debug_comps(request: Request, q: str = "6x6 framed art print price") -> dict:
+        """Admin-only: what the free comps search returns from THIS server (datacenter IPs get blocked)."""
+        _require_admin(request)
+        from shelf import tools
+        out = {}
+        for name, fn in (("ddgs", tools._ddgs), ("mojeek", tools._mojeek), ("jina_ddg", tools._jina_ddg)):
+            try:
+                res = await asyncio.to_thread(fn, q)
+                out[name] = {"count": len(res), "first": res[0]["url"] if res else ""}
+            except Exception as exc:
+                out[name] = {"error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+        return {"query": q, "backends": out}
 
     # ----- desk (agents after the sale) -----
     @app.get("/api/items/{item_id}/desk")
