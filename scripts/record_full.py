@@ -99,14 +99,20 @@ with sync_playwright() as p:
     # 3. storefront + item page
     pg.goto(B + "/store", wait_until="networkidle", timeout=120000); pg.wait_for_timeout(3500); shot("storefront: real prints")
     pg.goto(B + f"/store/{iid}", wait_until="networkidle", timeout=120000); pg.wait_for_timeout(2000)
-    find(lambda: pg, ["#paypal-button:not([hidden])"], 30000); pg.wait_for_timeout(3500); shot("item page with PayPal button")
+    find(lambda: pg, ["#paypal-button:not([hidden])"], 30000); pg.wait_for_timeout(5000); shot("item page with PayPal button")
 
-    # 4. PayPal checkout
-    pg.click("#paypal-button"); shot("click Pay with PayPal")
-    for _ in range(120):
+    # 4. PayPal checkout (retry the click if the SDK session was not ready yet)
+    for attempt in range(4):
+        pg.click("#paypal-button"); shot(f"click Pay with PayPal (try {attempt + 1})")
+        for _ in range(30):
+            if P() is not None:
+                break
+            time.sleep(0.5)
         if P() is not None:
             break
-        time.sleep(0.5)
+        pg.wait_for_timeout(3000)
+    if P() is None:
+        raise SystemExit("PayPal checkout never opened")
     time.sleep(3)
     em = find(P, ["#email", "input[type='email']"], 45000)
     em.fill(BUYER["SANDBOX_BUYER_EMAIL"]); time.sleep(0.8)

@@ -77,7 +77,9 @@ copywriter = LlmAgent(
         "If SELLER NOTES are present, they are facts: use the seller's size, series name, "
         "piece name and edition exactly as given (this is the seller's own work, so their "
         "title is allowed). NEVER state a size or dimension that is not in the seller notes; "
-        "a photo cannot prove a measurement. Never put a price in the description."
+        "a photo cannot prove a measurement. Never put a price in the description. "
+        "Do not add facts that neither the seller notes nor the photos establish: who made "
+        "or framed it, how it was made, materials you cannot see, provenance, or rarity."
     ),
 )
 
