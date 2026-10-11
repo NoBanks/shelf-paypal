@@ -166,7 +166,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     border-radius: 4px;
     padding: 8px;
     margin-top: 8px;
-    max-height: 140px;
+    max-height: 190px;
     overflow-y: auto;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 11px;
@@ -309,7 +309,10 @@ function renderCard(item) {
   let actions = '';
   let feed = '';
   if (status === 'processing') {
-    feed = '<div class="feed" id="feed-' + item.id + '"><div class="ev"><span class="ag">crew</span> waiting...</div></div>';
+    const lines = (item.feed && item.feed.length) ? item.feed : [{agent: 'crew', text: 'starting...'}];
+    feed = '<div class="feed" id="feed-' + item.id + '">' + lines.map(e =>
+      '<div class="ev"><span class="ag">' + escapeHtml(e.agent) + '</span> ' + escapeHtml(e.text) + '</div>').join('') +
+      '<div class="ev"><span class="ag">crew</span> working...</div></div>';
   } else if (status === 'draft') {
     const ap = item.appraisal || {};
     const comps = (ap.comps || []).map(c => {
@@ -377,7 +380,7 @@ async function refresh() {
     grid.innerHTML = items.map(renderCard).join('');
     for (const id in keep) { const el = document.getElementById(id); if (el) el.value = keep[id]; }
     for (const it of items) {
-      if (it.status === 'processing') subscribeFeed(it.id);
+      // feed lines come from /api/items on each refresh (SSE lines were wiped by re-render)
     }
   } catch (e) {
     console.error(e);

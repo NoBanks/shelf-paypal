@@ -87,6 +87,33 @@ def _appraisal(item: Item) -> dict:
     }
 
 
+def _step_summary(agent: str, text: str) -> str:
+    """One readable line per crew step for the live feed (raw model output is JSON)."""
+    from shelf.store import parse_agent_json
+    d = parse_agent_json(text)
+    try:
+        if agent == "curator" and d:
+            flaws = d.get("visible_flaws") or []
+            return (f"identified: {d.get('item_name', '?')} | condition {d.get('condition', '?')} | "
+                    f"flaws: {', '.join(flaws) if flaws else 'none visible'} | cover photo #{int(d.get('hero_index', 0)) + 1}")
+        if agent == "appraiser" and d:
+            if d.get("needs_human_pricing"):
+                return "no reliable comps found: abstaining, the seller sets the price"
+            comps = [c for c in (d.get("comps") or []) if isinstance(c, dict)]
+            hosts = []
+            for c in comps[:3]:
+                u = str(c.get("source_url", ""))
+                h = u.split("/")[2].replace("www.", "") if "//" in u else u
+                hosts.append(f"{h} ${c.get('price')}")
+            return f"suggests ${d.get('suggested_list')} (floor ${d.get('suggested_floor')}) from {len(comps)} cited comps: {', '.join(hosts)}"
+        if agent == "copywriter":
+            first = next((l.strip() for l in text.splitlines() if l.strip()), "")
+            return "wrote the listing: " + first.replace("Title:", "").strip()[:90]
+    except Exception:
+        pass
+    return text.strip().replace("\n", " ")[:160]
+
+
 def _thumb(item: Item) -> str:
     if not item.photo_paths:
         return ""
@@ -150,21 +177,20 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
                     # inline, which blocked this server's loop long enough for Render's 5s
                     # health check to fail and restart the instance mid-crew (2026-10-11).
                     out = await asyncio.to_thread(
-                        lambda: asyncio.run(run_item(photos, UPLOADS / item_id, seller_notes)))
+                        lambda: asyncio.run(run_item(photos, UPLOADS / item_id, seller_notes,
+                                                     on_step=lambda a, t: push(item_id, a, _step_summary(a, t)))))
                     break
                 except Exception as exc:
                     if any(m in str(exc).lower() for m in QUOTA_MARKERS):
-                        rotate_key()
+                        rotate_key(bench_current=True)
                         push(item_id, "crew", f"quota hit, rotated key (attempt {attempt + 1})")
                         last_exc = exc
-                        await asyncio.sleep(30)
+                        from shelf.run_local import usable_key_count
+                        await asyncio.sleep(2 if usable_key_count() else 30)  # fresh key: go now; all benched: wait
                         continue
                     raise
             if out is None:
                 raise last_exc if last_exc else RuntimeError("crew failed")
-            for agent in ("curator", "appraiser", "copywriter"):
-                if agent in out:
-                    push(item_id, agent, out[agent][:200])
             item = publish.build_item_from_crew(item_id, [str(p) for p in photos], out,
                                                 seller_notes=seller_notes, seller_price=seller_price)
             store.save_item(item)
@@ -248,6 +274,7 @@ def create_app(store: BaseStore | None = None, paypal: object | None = None) -> 
                 "photos": [f"/uploads/{it.id}/{pathlib.Path(p).name}" for p in it.photo_paths],
                 "notes": it.notes,
                 "appraisal": _appraisal(it),
+                "feed": [{"agent": e["agent"], "text": e["text"]} for e in events.get(it.id, [])[-6:]],
                 "seller_notes": it.seller_notes, "seller_price": it.seller_price,
                 "paypal_order_id": it.paypal_order_id, "paypal_capture_id": it.paypal_capture_id,
                 "buyer_email": it.buyer_email, "sold_price": it.sold_price, "net_amount": it.net_amount,

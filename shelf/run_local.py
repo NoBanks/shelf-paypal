@@ -57,19 +57,44 @@ def load_key(idx: int | None = None) -> None:
     os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "FALSE")
 
 
-def rotate_key() -> int:
-    """Advance to the next key in the pool (call on 429/503/quota errors)."""
+_BENCHED: dict[str, float] = {}  # key -> time it may be used again
+BENCH_SECONDS = 600
+
+
+def rotate_key(bench_current: bool = False) -> int:
+    """Advance to the next usable key. With bench_current=True (after a 429), the key that just
+    failed is benched for BENCH_SECONDS so rotation skips it instead of walking into it again.
+    Found 2026-10-11: 10 of 44 keys were rate-limited and the walk kept landing on them."""
+    import time as _t
     global _KEY_IDX
-    _KEY_IDX += 1
+    keys = _pool()
+    if not keys:
+        return _KEY_IDX
+    now = _t.time()
+    if bench_current:
+        _BENCHED[keys[_KEY_IDX % len(keys)]] = now + BENCH_SECONDS
+    for _ in range(len(keys)):
+        _KEY_IDX += 1
+        if _BENCHED.get(keys[_KEY_IDX % len(keys)], 0) <= now:
+            break
     load_key()
     return _KEY_IDX
 
 
-async def run_item(photos: list[pathlib.Path], out_dir: pathlib.Path, seller_notes: str = "") -> dict:
+def usable_key_count() -> int:
+    import time as _t
+    now = _t.time()
+    return sum(1 for k in _pool() if _BENCHED.get(k, 0) <= now)
+
+
+async def run_item(photos: list[pathlib.Path], out_dir: pathlib.Path, seller_notes: str = "",
+                   on_step=None) -> dict:
     from google.adk.runners import InMemoryRunner
     from google.genai import types
 
-    from shelf.agents import item_crew
+    from shelf.agents import item_crew, refresh_models
+
+    refresh_models()  # use the key that is current NOW, not the one cached at first use
 
     runner = InMemoryRunner(agent=item_crew, app_name="shelf")
     session = await runner.session_service.create_session(
@@ -94,6 +119,11 @@ async def run_item(photos: list[pathlib.Path], out_dir: pathlib.Path, seller_not
             text = "".join(pt.text or "" for pt in event.content.parts)
             if text.strip():
                 outputs[event.author] = outputs.get(event.author, "") + text
+        if on_step is not None and event.is_final_response() and event.author in outputs:
+            try:
+                on_step(event.author, outputs[event.author])
+            except Exception:
+                pass
 
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "crew_output.json").write_text(json.dumps(outputs, indent=1))

@@ -122,3 +122,17 @@ bookkeeper = LlmAgent(
     ),
     tools=[shop_tools.ledger_summary, shop_tools.list_paypal_captures],
 )
+
+
+def refresh_models() -> None:
+    """Drop each agent's cached model client so the next call builds one with the CURRENT key.
+
+    ADK resolves a string model once per agent and caches it, and the Gemini client caches
+    the API key from the environment at that moment. Without this, rotate_key() changed the
+    environment but every retry kept using the first key (found 2026-10-11).
+    """
+    for a in (curator, appraiser, copywriter, shopkeeper, bookkeeper):
+        try:
+            a._resolved_model = None
+        except Exception:
+            pass

@@ -23,6 +23,8 @@ async def _run_agent(agent, prompt: str, user_id: str = "seller") -> str:
     from shelf.run_local import load_key
 
     load_key()
+    from shelf.agents import refresh_models
+    refresh_models()
     runner = InMemoryRunner(agent=agent, app_name="shelf-desk")
     session = await runner.session_service.create_session(app_name="shelf-desk", user_id=user_id)
     msg = types.Content(role="user", parts=[types.Part.from_text(text=prompt)])

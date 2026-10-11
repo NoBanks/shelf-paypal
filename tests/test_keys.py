@@ -40,3 +40,31 @@ def test_load_key_sets_google_api_key(monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     run_local.load_key(1)
     assert __import__("os").environ["GOOGLE_API_KEY"] == "y"
+
+
+def test_rotate_benches_failed_key_and_skips_it(monkeypatch):
+    monkeypatch.setenv("GEMINI_KEYS", "a,b,c")
+    run_local._BENCHED.clear()
+    run_local.load_key(0)
+    assert __import__("os").environ["GOOGLE_API_KEY"] == "a"
+    run_local.rotate_key(bench_current=True)          # a failed -> benched
+    assert __import__("os").environ["GOOGLE_API_KEY"] == "b"
+    run_local.rotate_key(bench_current=True)          # b failed -> benched
+    assert __import__("os").environ["GOOGLE_API_KEY"] == "c"
+    run_local.rotate_key()                            # normal rotation skips benched a, b
+    assert __import__("os").environ["GOOGLE_API_KEY"] == "c"
+    assert run_local.usable_key_count() == 1
+    run_local._BENCHED.clear()
+
+
+def test_refresh_models_picks_up_new_key(monkeypatch):
+    """Regression: after a key rotation the next model client must use the NEW key."""
+    from shelf import agents
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "FALSE")
+    monkeypatch.setenv("GOOGLE_API_KEY", "key-one")
+    agents.refresh_models()
+    first = agents.curator.canonical_model.api_client._api_client.api_key
+    monkeypatch.setenv("GOOGLE_API_KEY", "key-two")
+    assert agents.curator.canonical_model.api_client._api_client.api_key == first  # cached: the old bug
+    agents.refresh_models()
+    assert agents.curator.canonical_model.api_client._api_client.api_key == "key-two"
